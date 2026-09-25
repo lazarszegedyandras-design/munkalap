@@ -6,7 +6,7 @@ A `main` ágon a backend és a webes kliens ellenőrzése már kötelező, de a 
 
 ## Döntés
 
-Ubuntu GitHub Actions futtatón a meglévő `test-release.sh --suite all` indul. A futás előtt a `scripts/create_release_manifest.py` kizárólag a checkoutban Git által követett, a teszthez szükséges forrásfájlokból készít új SHA-256 manifestet. A generátor a `safe_source_path` szabályait alkalmazza, a meglévő manifestet nem írja felül, és a Gitből kizárt privát adatokat nem veszi fel. A gyökér `.dockerignore` nem kerül a szűrt snapshotba, mert a tesztimage-eknek a webes és mobil tesztforrásra is szükségük van.
+Ubuntu GitHub Actions futtatón a meglévő `test-release.sh --suite all` indul. A futás előtt a `scripts/create_release_manifest.py` kizárólag a checkoutban Git által követett, a teszthez szükséges forrásfájlokból készít új SHA-256 manifestet. A generátor a `safe_source_path` szabályait alkalmazza, a meglévő manifestet nem írja felül, és a Gitből kizárt privát adatokat nem veszi fel. A tesztképekhez a `deploy/testing/*.dockerignore` külön szabályokat ad, így a konfigurációs tesztekhez szükséges gyökér `.dockerignore`, valamint a webes és mobil tesztforrás is bekerül.
 
 A workflow csak olvasási jogosultságot kap. Nem használ production titkot, adatbázist, runtime-mappát vagy távoli telepítési célpontot. Hibánál a tesztjelentést rövid ideig megőrzi a GitHubon. A `Docker release suite` job csak az első sikeres pull request-futás után válhat kötelező státuszellenőrzéssé.
 
