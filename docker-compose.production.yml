@@ -1,0 +1,223 @@
+services:
+  db:
+    environment:
+      POSTGRES_PASSWORD: ""
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+
+  backend:
+    environment:
+      DATABASE_URL: ""
+      DATABASE_URL_FILE: /run/secrets/database_url
+      SECRET_KEY: ""
+      SECRET_KEY_FILE: /run/secrets/secret_key
+      MFA_ENCRYPTION_KEY: ""
+      MFA_ENCRYPTION_KEY_FILE: /run/secrets/mfa_encryption_key
+      BACKUP_AGENT_TOKEN: ""
+      BACKUP_AGENT_TOKEN_FILE: /run/secrets/backup_agent_token
+      ENVIRONMENT: production
+      PUBLIC_BASE_URL: https://${APP_DOMAIN}
+      CORS_ORIGINS: https://${APP_DOMAIN}
+      SESSION_COOKIE_SECURE: "true"
+      PASSWORD_MIN_LENGTH: ${PASSWORD_MIN_LENGTH:-12}
+      ADMIN_MFA_REQUIRED: "true"
+      SENSITIVE_MFA_MAX_AGE_SECONDS: ${SENSITIVE_MFA_MAX_AGE_SECONDS:-300}
+      MFA_STEP_UP_RATE_LIMIT_ATTEMPTS: ${MFA_STEP_UP_RATE_LIMIT_ATTEMPTS:-5}
+      MFA_STEP_UP_RATE_LIMIT_WINDOW_SECONDS: ${MFA_STEP_UP_RATE_LIMIT_WINDOW_SECONDS:-300}
+      MFA_STEP_UP_RATE_LIMIT_BLOCK_SECONDS: ${MFA_STEP_UP_RATE_LIMIT_BLOCK_SECONDS:-900}
+      LOGIN_RATE_LIMIT_ATTEMPTS: ${LOGIN_RATE_LIMIT_ATTEMPTS:-5}
+      LOGIN_IP_RATE_LIMIT_ATTEMPTS: ${LOGIN_IP_RATE_LIMIT_ATTEMPTS:-50}
+      LOGIN_RATE_LIMIT_WINDOW_SECONDS: ${LOGIN_RATE_LIMIT_WINDOW_SECONDS:-300}
+      LOGIN_RATE_LIMIT_BLOCK_SECONDS: ${LOGIN_RATE_LIMIT_BLOCK_SECONDS:-900}
+      DOCS_ENABLED: "false"
+      MALWARE_SCAN_ENABLED: "true"
+      MALWARE_SCAN_FAIL_CLOSED: "true"
+      TRUSTED_PROXY_CIDRS: ${FRONTEND_INTERNAL_IP:-172.30.250.20}/32
+      PUSH_NOTIFICATIONS_ENABLED: "true"
+      FCM_PROJECT_ID: ${FCM_PROJECT_ID}
+      FCM_SERVICE_ACCOUNT_FILE: /run/secrets/firebase_service_account
+    secrets:
+      - database_url
+      - secret_key
+      - mfa_encryption_key
+      - backup_agent_token
+    networks:
+      app_net:
+        ipv4_address: ${BACKEND_INTERNAL_IP:-172.30.250.30}
+      data_net: {}
+      security_net: {}
+      backup_api_net: {}
+
+  db-role-provisioner:
+    environment:
+      DB_ADMIN_URL: ""
+      DB_ADMIN_URL_FILE: /run/secrets/database_admin_url
+      DATABASE_APP_PASSWORD: ""
+      DATABASE_APP_PASSWORD_FILE: /run/secrets/database_app_password
+      DATABASE_MIGRATE_PASSWORD: ""
+      DATABASE_MIGRATE_PASSWORD_FILE: /run/secrets/database_migrate_password
+    secrets:
+      - database_admin_url
+      - database_app_password
+      - database_migrate_password
+
+  migrate:
+    environment:
+      DATABASE_URL: ""
+      DATABASE_URL_FILE: /run/secrets/database_migration_url
+      MIGRATION_SET_ROLE: workapp_owner
+      ENVIRONMENT: production
+    secrets:
+      - database_migration_url
+      - bootstrap_admin_password
+
+  push-worker:
+    environment:
+      DATABASE_URL: ""
+      DATABASE_URL_FILE: /run/secrets/database_url
+      ENVIRONMENT: production
+      PUSH_NOTIFICATIONS_ENABLED: "true"
+      FCM_PROJECT_ID: ${FCM_PROJECT_ID}
+      FCM_SERVICE_ACCOUNT_FILE: /run/secrets/firebase_service_account
+      PUSH_WORKER_POLL_SECONDS: ${PUSH_WORKER_POLL_SECONDS:-5}
+      PUSH_WORKER_LOCK_TIMEOUT_SECONDS: ${PUSH_WORKER_LOCK_TIMEOUT_SECONDS:-300}
+      PUSH_RETRY_MAX_ATTEMPTS: ${PUSH_RETRY_MAX_ATTEMPTS:-5}
+      PUSH_ANDROID_CHANNEL_ID: ${PUSH_ANDROID_CHANNEL_ID:-work_orders}
+    secrets:
+      - database_url
+      - firebase_service_account
+
+  backup-agent:
+    environment:
+      APP_VERSION: ${APP_VERSION:-0.31.0}
+      BACKUP_AGENT_TOKEN: ""
+      BACKUP_AGENT_TOKEN_FILE: /run/secrets/backup_agent_token
+      BACKUP_RUNNER_TOKEN: ""
+      BACKUP_RUNNER_TOKEN_FILE: /run/secrets/backup_runner_token
+      OFFSITE_BACKUP_ENABLED: ${OFFSITE_BACKUP_ENABLED:-true}
+      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY}
+      RESTIC_PASSWORD: ""
+      RESTIC_PASSWORD_FILE: /run/secrets/restic_password
+      AWS_ACCESS_KEY_ID: ""
+      AWS_ACCESS_KEY_ID_FILE: /run/secrets/aws_access_key_id
+      AWS_SECRET_ACCESS_KEY: ""
+      AWS_SECRET_ACCESS_KEY_FILE: /run/secrets/aws_secret_access_key
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-eu-central-1}
+      RESTIC_KEEP_DAILY: ${RESTIC_KEEP_DAILY:-14}
+      RESTIC_KEEP_WEEKLY: ${RESTIC_KEEP_WEEKLY:-8}
+      RESTIC_KEEP_MONTHLY: ${RESTIC_KEEP_MONTHLY:-12}
+    secrets:
+      - backup_agent_token
+      - backup_runner_token
+      - restic_password
+      - aws_access_key_id
+      - aws_secret_access_key
+
+  backup-runner:
+    environment:
+      APP_VERSION: ${APP_VERSION:-0.31.0}
+      BACKUP_RUNNER_TOKEN: ""
+      BACKUP_RUNNER_TOKEN_FILE: /run/secrets/backup_runner_token
+    secrets:
+      - backup_runner_token
+
+  frontend:
+    networks:
+      app_net:
+        ipv4_address: ${FRONTEND_INTERNAL_IP:-172.30.250.20}
+
+  edge:
+    image: caddy:2.11.4-alpine
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+      TLS_EMAIL: ${TLS_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/caddy:/etc/caddy:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      frontend:
+        condition: service_healthy
+    logging:
+      driver: local
+      options:
+        max-size: "20m"
+        max-file: "5"
+    networks:
+      app_net:
+        ipv4_address: ${EDGE_INTERNAL_IP:-172.30.250.10}
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:2.5.4
+    restart: unless-stopped
+    profiles: ["monitoring"]
+    ports:
+      - "127.0.0.1:${UPTIME_KUMA_PORT:-3001}:3001"
+    volumes:
+      - uptime_kuma_data:/app/data
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: local
+      options:
+        max-size: "20m"
+        max-file: "5"
+    networks:
+      - app_net
+
+volumes:
+  caddy_data:
+  caddy_config:
+  uptime_kuma_data:
+
+networks:
+  app_net:
+    ipam:
+      config:
+        - subnet: ${APP_NETWORK_SUBNET:-172.30.250.0/24}
+
+secrets:
+  postgres_password:
+    file: ${SECRETS_DIR:-./secrets}/postgres_password
+  database_url:
+    file: ${SECRETS_DIR:-./secrets}/database_url
+  database_migration_url:
+    file: ${SECRETS_DIR:-./secrets}/database_migration_url
+  database_admin_url:
+    file: ${SECRETS_DIR:-./secrets}/database_admin_url
+  database_app_password:
+    file: ${SECRETS_DIR:-./secrets}/database_app_password
+  database_migrate_password:
+    file: ${SECRETS_DIR:-./secrets}/database_migrate_password
+  secret_key:
+    file: ${SECRETS_DIR:-./secrets}/secret_key
+  mfa_encryption_key:
+    file: ${SECRETS_DIR:-./secrets}/mfa_encryption_key
+  backup_agent_token:
+    file: ${SECRETS_DIR:-./secrets}/backup_agent_token
+  backup_runner_token:
+    file: ${SECRETS_DIR:-./secrets}/backup_runner_token
+  bootstrap_admin_password:
+    file: ${SECRETS_DIR:-./secrets}/bootstrap_admin_password
+  restic_password:
+    file: ${SECRETS_DIR:-./secrets}/restic_password
+  aws_access_key_id:
+    file: ${SECRETS_DIR:-./secrets}/aws_access_key_id
+  aws_secret_access_key:
+    file: ${SECRETS_DIR:-./secrets}/aws_secret_access_key
+  firebase_service_account:
+    file: ${SECRETS_DIR:-./secrets}/firebase_service_account.json

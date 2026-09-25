@@ -1,0 +1,46 @@
+{
+    email {$TLS_EMAIL}
+    admin off
+}
+
+{$APP_DOMAIN} {
+    encode zstd gzip
+
+    @blocked_methods method TRACE CONNECT
+    respond @blocked_methods 405
+
+    @internal_docs path /docs* /redoc* /api/openapi.json
+    respond @internal_docs 404
+
+    header {
+        -Server
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+        X-Robots-Tag "noindex, nofollow, noarchive"
+    }
+
+    tls {
+        protocols tls1.2 tls1.3
+    }
+
+    reverse_proxy frontend:3000 {
+        # Never trust client-supplied forwarding headers at the public edge.
+        # Nginx/backend rate limiting and audit attribution must use the TCP peer
+        # observed by Caddy, not an attacker-controlled X-Forwarded-For value.
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        health_uri /health
+        health_interval 30s
+        health_timeout 5s
+    }
+
+    log {
+        output stdout
+        format json
+    }
+}

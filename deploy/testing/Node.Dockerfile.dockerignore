@@ -1,0 +1,7 @@
+# Context is an allowlisted/hash-verified release snapshot, not the working tree.
+**/__pycache__
+**/.pytest_cache
+**/node_modules
+**/.env
+**/.env.production
+**/secrets

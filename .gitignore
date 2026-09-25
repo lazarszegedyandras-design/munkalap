@@ -1,0 +1,59 @@
+.env
+__pycache__/
+.pytest_cache/
+*.pyc
+node_modules/
+dist/
+postgres_data/
+.DS_Store
+backups/
+pre-restore-backups/
+*.dump
+*.tar
+*.tar.gz
+checksums.sha256
+.env.production
+secrets/
+# Android/Firebase build secrets and native outputs
+mobile/android/app/google-services.json
+mobile/keystore/
+mobile/android-release.env
+mobile/native-dist/
+
+# Isolated release-test artifacts
+test-results/
+security-artifacts/
+security-results/
+release-images.lock.json
+release-source-manifest.json
+
+# Local configuration and credentials
+**/.env
+**/.env.*
+!**/.env.example
+!**/.release.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Local data, backups and generated output
+/Munkalap-backups/
+/imports/
+*.bak
+*.sql.gz
+*.sqlite
+*.sqlite3
+*.db
+/.venv/
+/venv/
+/coverage/
+.coverage
+
+# Operational customer, HR and company contact records
+/backend/app/data/company_profiles.json
+/backend/app/data/customer_assets_20260616.json
+/backend/app/data/hr_leave_2026_rlb.json
+
+# Historical, invalid Alembic file retained locally for recovery only
+/backend/migrations/versions/0024_contract_details_archives_hr_calendar.py

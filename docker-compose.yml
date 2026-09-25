@@ -1,0 +1,434 @@
+x-default-logging: &default-logging
+  driver: local
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  db:
+    build:
+      context: .
+      dockerfile: database/Dockerfile
+      labels:
+        hu.lunait.release.version: ${APP_VERSION:-0.31.0}
+    image: munkalap-postgres-pgbackrest:${APP_VERSION:-0.31.0}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-workapp}
+      POSTGRES_USER: ${POSTGRES_USER:-workapp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD-workapp}
+      POSTGRES_PASSWORD_FILE: ${POSTGRES_PASSWORD_FILE-}
+      PGUSER: ${POSTGRES_USER:-workapp}
+    expose:
+      - "5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - backup_repository:/var/lib/pgbackrest
+    command:
+      - postgres
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=pgbackrest --stanza=workapp archive-push %p
+      - -c
+      - archive_timeout=60s
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-workapp} -d ${POSTGRES_DB:-workapp}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    networks:
+      - data_net
+
+  runtime-permissions:
+    image: munkalap-backend:${APP_VERSION:-0.31.0}
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      labels:
+        hu.lunait.release.version: ${APP_VERSION:-0.31.0}
+    restart: "no"
+    user: "0:0"
+    entrypoint: ["/bin/sh", "/app/runtime-permissions.sh"]
+    command: []
+    environment:
+      RUNTIME_DIR: /app/runtime
+      APP_RUNTIME_UID: "10001"
+      APP_RUNTIME_GID: "10001"
+    volumes:
+      - app_runtime:/app/runtime
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+      - DAC_OVERRIDE
+    security_opt:
+      - no-new-privileges:true
+    network_mode: "none"
+    logging: *default-logging
+
+  backend:
+    image: munkalap-backend:${APP_VERSION:-0.31.0}
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      labels:
+        hu.lunait.release.version: ${APP_VERSION:-0.31.0}
+    restart: unless-stopped
+    user: "10001:10001"
+    entrypoint: ["/bin/sh", "/app/entrypoint.sh"]
+    command: []
+    environment:
+      DATABASE_URL: postgresql+psycopg2://workapp_app:${DATABASE_APP_PASSWORD:-workapp-app-dev}@db:5432/${POSTGRES_DB:-workapp}
+      DATABASE_URL_FILE: ${DATABASE_URL_FILE-}
+      SECRET_KEY: ${SECRET_KEY-}
+      SECRET_KEY_FILE: ${SECRET_KEY_FILE-}
+      MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY-}
+      MFA_ENCRYPTION_KEY_FILE: ${MFA_ENCRYPTION_KEY_FILE-}
+      BACKUP_AGENT_TOKEN: ${BACKUP_AGENT_TOKEN-}
+      BACKUP_AGENT_TOKEN_FILE: ${BACKUP_AGENT_TOKEN_FILE-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      PASSWORD_MIN_LENGTH: ${PASSWORD_MIN_LENGTH:-10}
+      SESSION_IDLE_TIMEOUT_MINUTES: ${SESSION_IDLE_TIMEOUT_MINUTES:-60}
+      SESSION_ABSOLUTE_TIMEOUT_MINUTES: ${SESSION_ABSOLUTE_TIMEOUT_MINUTES:-720}
+      SESSION_TOUCH_INTERVAL_SECONDS: ${SESSION_TOUCH_INTERVAL_SECONDS:-60}
+      ADMIN_MFA_REQUIRED: ${ADMIN_MFA_REQUIRED:-false}
+      MFA_CHALLENGE_EXPIRE_MINUTES: ${MFA_CHALLENGE_EXPIRE_MINUTES:-5}
+      SENSITIVE_MFA_MAX_AGE_SECONDS: ${SENSITIVE_MFA_MAX_AGE_SECONDS:-300}
+      MFA_STEP_UP_RATE_LIMIT_ATTEMPTS: ${MFA_STEP_UP_RATE_LIMIT_ATTEMPTS:-5}
+      MFA_STEP_UP_RATE_LIMIT_WINDOW_SECONDS: ${MFA_STEP_UP_RATE_LIMIT_WINDOW_SECONDS:-300}
+      MFA_STEP_UP_RATE_LIMIT_BLOCK_SECONDS: ${MFA_STEP_UP_RATE_LIMIT_BLOCK_SECONDS:-900}
+      LOGIN_RATE_LIMIT_ATTEMPTS: ${LOGIN_RATE_LIMIT_ATTEMPTS:-5}
+      LOGIN_IP_RATE_LIMIT_ATTEMPTS: ${LOGIN_IP_RATE_LIMIT_ATTEMPTS:-50}
+      LOGIN_RATE_LIMIT_WINDOW_SECONDS: ${LOGIN_RATE_LIMIT_WINDOW_SECONDS:-300}
+      LOGIN_RATE_LIMIT_BLOCK_SECONDS: ${LOGIN_RATE_LIMIT_BLOCK_SECONDS:-900}
+      DOCS_ENABLED: ${DOCS_ENABLED:-true}
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+      MALWARE_SCAN_ENABLED: ${MALWARE_SCAN_ENABLED:-false}
+      MALWARE_SCAN_HOST: ${MALWARE_SCAN_HOST:-clamav}
+      MALWARE_SCAN_PORT: ${MALWARE_SCAN_PORT:-3310}
+      MALWARE_SCAN_TIMEOUT_SECONDS: ${MALWARE_SCAN_TIMEOUT_SECONDS:-15}
+      MALWARE_SCAN_FAIL_CLOSED: ${MALWARE_SCAN_FAIL_CLOSED:-false}
+      BACKEND_WORKERS: ${BACKEND_WORKERS:-3}
+      DATABASE_POOL_SIZE: ${DATABASE_POOL_SIZE:-5}
+      DATABASE_MAX_OVERFLOW: ${DATABASE_MAX_OVERFLOW:-5}
+      RUNTIME_DIR: ${RUNTIME_DIR:-/app/runtime}
+      ARCHIVE_DIR: ${ARCHIVE_DIR:-/app/runtime/work_order_archives}
+      ARCHIVE_MAX_SIZE_MB: ${ARCHIVE_MAX_SIZE_MB:-25}
+      PROCUREMENT_MAX_SIZE_MB: ${PROCUREMENT_MAX_SIZE_MB:-25}
+      IMPORT_MAX_SIZE_MB: ${IMPORT_MAX_SIZE_MB:-50}
+      MOBILE_ACCESS_TOKEN_EXPIRE_MINUTES: ${MOBILE_ACCESS_TOKEN_EXPIRE_MINUTES:-15}
+      MOBILE_REFRESH_TOKEN_EXPIRE_DAYS: ${MOBILE_REFRESH_TOKEN_EXPIRE_DAYS:-30}
+      MOBILE_SIGNATURE_MAX_SIZE_KB: ${MOBILE_SIGNATURE_MAX_SIZE_KB:-1024}
+      MOBILE_SIGNATURE_DIR: ${MOBILE_SIGNATURE_DIR:-/app/runtime/work_order_signatures}
+      MOBILE_PHOTO_DIR: ${MOBILE_PHOTO_DIR:-/app/runtime/work_order_photos}
+      MOBILE_PHOTO_MAX_SIZE_MB: ${MOBILE_PHOTO_MAX_SIZE_MB:-8}
+      MOBILE_PHOTO_MAX_PIXELS: ${MOBILE_PHOTO_MAX_PIXELS:-12000000}
+      MOBILE_PHOTO_MAX_DIMENSION: ${MOBILE_PHOTO_MAX_DIMENSION:-2048}
+      BUSINESS_TIMEZONE: ${BUSINESS_TIMEZONE:-Europe/Budapest}
+      WORK_ORDER_ACCEPTANCE_TEXT_VERSION: ${WORK_ORDER_ACCEPTANCE_TEXT_VERSION:-1}
+      WORK_ORDER_ACCEPTANCE_TEXT: ${WORK_ORDER_ACCEPTANCE_TEXT:-A munkalapon feltuntetett munkavegzest es adatokat megismertem es elfogadom.}
+      PUSH_NOTIFICATIONS_ENABLED: ${PUSH_NOTIFICATIONS_ENABLED:-false}
+      FCM_PROJECT_ID: ${FCM_PROJECT_ID-}
+      FCM_SERVICE_ACCOUNT_FILE: ${FCM_SERVICE_ACCOUNT_FILE-}
+      PUSH_WORKER_POLL_SECONDS: ${PUSH_WORKER_POLL_SECONDS:-5}
+      PUSH_WORKER_LOCK_TIMEOUT_SECONDS: ${PUSH_WORKER_LOCK_TIMEOUT_SECONDS:-300}
+      PUSH_RETRY_MAX_ATTEMPTS: ${PUSH_RETRY_MAX_ATTEMPTS:-5}
+      PUSH_ANDROID_CHANNEL_ID: ${PUSH_ANDROID_CHANNEL_ID:-work_orders}
+      BACKUP_AGENT_URL: http://backup-agent:8090
+    expose:
+      - "8000"
+    volumes:
+      - app_runtime:/app/runtime
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/ready', timeout=3).read()"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      runtime-permissions:
+        condition: service_completed_successfully
+    logging: *default-logging
+    networks:
+      - app_net
+      - data_net
+      - security_net
+      - backup_api_net
+
+  db-role-provisioner:
+    image: munkalap-backend:${APP_VERSION:-0.31.0}
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      labels:
+        hu.lunait.release.version: ${APP_VERSION:-0.31.0}
+    restart: "no"
+    user: "10001:10001"
+    entrypoint: ["python", "/app/scripts/provision_db_roles.py"]
+    command: []
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-workapp}
+      DB_ADMIN_URL: postgresql://${POSTGRES_USER:-workapp}:${POSTGRES_PASSWORD:-workapp}@db:5432/${POSTGRES_DB:-workapp}
+      DB_ADMIN_URL_FILE: ${DB_ADMIN_URL_FILE-}
+      DATABASE_APP_PASSWORD: ${DATABASE_APP_PASSWORD:-workapp-app-dev}
+      DATABASE_APP_PASSWORD_FILE: ${DATABASE_APP_PASSWORD_FILE-}
+      DATABASE_MIGRATE_PASSWORD: ${DATABASE_MIGRATE_PASSWORD:-workapp-migrate-dev}
+      DATABASE_MIGRATE_PASSWORD_FILE: ${DATABASE_MIGRATE_PASSWORD_FILE-}
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      db:
+        condition: service_healthy
+    logging: *default-logging
+    networks:
+      - data_net
+
+  migrate:
+    image: munkalap-backend:${APP_VERSION:-0.31.0}
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      labels:
+        hu.lunait.release.version: ${APP_VERSION:-0.31.0}
+    restart: "no"
+    user: "10001:10001"
+    entrypoint: ["/bin/sh", "/app/migrate-entrypoint.sh"]
+    command: []
+    environment:
+      DATABASE_URL: postgresql+psycopg2://workapp_migrate:${DATABASE_MIGRATE_PASSWORD:-workapp-migrate-dev}@db:5432/${POSTGRES_DB:-workapp}
+      DATABASE_URL_FILE: ${DATABASE_MIGRATION_URL_FILE-}
+      MIGRATION_SET_ROLE: workapp_owner
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-admin@example.com}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD-}
+      BOOTSTRAP_ADMIN_PASSWORD_FILE: ${BOOTSTRAP_ADMIN_PASSWORD_FILE-}
+      PASSWORD_MIN_LENGTH: ${PASSWORD_MIN_LENGTH:-10}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      db-role-provisioner:
+        condition: service_completed_successfully
+    logging: *default-logging
+    networks:
+      - data_net
+
+  push-worker:
+    image: munkalap-backend:${APP_VERSION:-0.31.0}
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      labels:
+        hu.lunait.release.version: ${APP_VERSION:-0.31.0}
+    restart: unless-stopped
+    user: "10001:10001"
+    entrypoint: ["python", "-m", "app.push_worker"]
+    command: []
+    environment:
+      DATABASE_URL: postgresql+psycopg2://workapp_app:${DATABASE_APP_PASSWORD:-workapp-app-dev}@db:5432/${POSTGRES_DB:-workapp}
+      DATABASE_URL_FILE: ${DATABASE_URL_FILE-}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      PUSH_NOTIFICATIONS_ENABLED: ${PUSH_NOTIFICATIONS_ENABLED:-false}
+      FCM_PROJECT_ID: ${FCM_PROJECT_ID-}
+      FCM_SERVICE_ACCOUNT_FILE: ${FCM_SERVICE_ACCOUNT_FILE-}
+      PUSH_WORKER_POLL_SECONDS: ${PUSH_WORKER_POLL_SECONDS:-5}
+      PUSH_WORKER_LOCK_TIMEOUT_SECONDS: ${PUSH_WORKER_LOCK_TIMEOUT_SECONDS:-300}
+      PUSH_RETRY_MAX_ATTEMPTS: ${PUSH_RETRY_MAX_ATTEMPTS:-5}
+      PUSH_ANDROID_CHANNEL_ID: ${PUSH_ANDROID_CHANNEL_ID:-work_orders}
+      DATABASE_POOL_SIZE: ${DATABASE_POOL_SIZE:-5}
+      DATABASE_MAX_OVERFLOW: ${DATABASE_MAX_OVERFLOW:-5}
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    logging: *default-logging
+    networks:
+      - data_net
+
+  backup-agent:
+    build:
+      context: .
+      dockerfile: backup_agent/Dockerfile
+      labels:
+        hu.lunait.release.version: ${APP_VERSION:-0.31.0}
+    image: munkalap-backup-agent:${APP_VERSION:-0.31.0}
+    restart: unless-stopped
+    environment:
+      APP_VERSION: ${APP_VERSION:-0.31.0}
+      BACKUP_AGENT_TOKEN: ${BACKUP_AGENT_TOKEN:-change-me-backup-agent-token}
+      BACKUP_AGENT_TOKEN_FILE: ${BACKUP_AGENT_TOKEN_FILE-}
+      BACKUP_RUNNER_URL: http://backup-runner:8091
+      BACKUP_RUNNER_TOKEN: ${BACKUP_RUNNER_TOKEN:-change-this-backup-runner-token-before-production}
+      BACKUP_RUNNER_TOKEN_FILE: ${BACKUP_RUNNER_TOKEN_FILE-}
+      BACKUP_TIMEZONE: ${BACKUP_TIMEZONE:-Europe/Budapest}
+      PGBACKREST_STANZA: workapp
+      BACKUP_CONTROL_DIR: /control
+      BACKUP_REPOSITORY_DIR: /repo
+      BACKUP_RUNTIME_DIR: /runtime
+      BACKUP_RUNTIME_UID: "10001"
+      BACKUP_RUNTIME_GID: "10001"
+      BACKUP_PROJECT_DIR: /project
+      BACKEND_INTERNAL_URL: http://backend:8000
+      OFFSITE_BACKUP_ENABLED: ${OFFSITE_BACKUP_ENABLED:-false}
+      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY-}
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD-}
+      RESTIC_PASSWORD_FILE: ${RESTIC_PASSWORD_FILE-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID-}
+      AWS_ACCESS_KEY_ID_FILE: ${AWS_ACCESS_KEY_ID_FILE-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY-}
+      AWS_SECRET_ACCESS_KEY_FILE: ${AWS_SECRET_ACCESS_KEY_FILE-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-eu-central-1}
+      RESTIC_KEEP_DAILY: ${RESTIC_KEEP_DAILY:-14}
+      RESTIC_KEEP_WEEKLY: ${RESTIC_KEEP_WEEKLY:-8}
+      RESTIC_KEEP_MONTHLY: ${RESTIC_KEEP_MONTHLY:-12}
+    volumes:
+      - backup_repository:/repo
+      - backup_control:/control
+      - app_runtime:/runtime
+      - offsite_restore:/offsite-restore
+      - ./:/project:ro
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    depends_on:
+      backup-runner:
+        condition: service_started
+      runtime-permissions:
+        condition: service_completed_successfully
+    networks:
+      - backup_api_net
+      - privileged_net
+
+  backup-runner:
+    build:
+      context: .
+      dockerfile: backup_runner/Dockerfile
+      labels:
+        hu.lunait.release.version: ${APP_VERSION:-0.31.0}
+    image: munkalap-backup-runner:${APP_VERSION:-0.31.0}
+    restart: unless-stopped
+    environment:
+      BACKUP_RUNNER_TOKEN: ${BACKUP_RUNNER_TOKEN:-change-this-backup-runner-token-before-production}
+      BACKUP_RUNNER_TOKEN_FILE: ${BACKUP_RUNNER_TOKEN_FILE-}
+      BACKUP_REPOSITORY_DIR: /repo
+      PGBACKREST_STANZA: workapp
+    expose:
+      - "8091"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - backup_repository:/repo
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    networks:
+      - privileged_net
+
+  frontend:
+    image: munkalap-frontend:${APP_VERSION:-0.31.0}
+    pull_policy: never
+    build:
+      context: ./frontend
+      labels:
+        hu.lunait.release.version: ${APP_VERSION:-0.31.0}
+      args:
+        VITE_API_URL: /api
+    restart: unless-stopped
+    expose:
+      - "3000"
+    read_only: true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /var/cache/nginx:size=64m,mode=1777
+      - /var/run:size=8m,mode=1777
+      - /tmp:size=32m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:3000/health | grep -q '^ok'"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    depends_on:
+      backend:
+        condition: service_healthy
+    logging: *default-logging
+    networks:
+      - app_net
+
+  clamav:
+    image: clamav/clamav:1.5.4-debian
+    restart: unless-stopped
+    profiles: ["security"]
+    expose:
+      - "3310"
+    volumes:
+      - clamav_signatures:/var/lib/clamav
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    networks:
+      - security_net
+
+volumes:
+  postgres_data:
+  app_runtime:
+  backup_repository:
+  backup_control:
+  offsite_restore:
+  clamav_signatures:
+
+networks:
+  app_net:
+  data_net:
+    internal: true
+  security_net:
+    internal: true
+  backup_api_net:
+    internal: true
+  privileged_net:
+    internal: true

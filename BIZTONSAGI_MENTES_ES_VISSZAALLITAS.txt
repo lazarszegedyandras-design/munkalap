@@ -1,0 +1,421 @@
+MUNKALAP- ÉS ESZKÖZAPP
+BIZTONSÁGI MENTÉS ÉS VISSZAÁLLÍTÁS
+===================================
+
+Ez a leírás a Docker Compose-zal futó Munkalap- és eszközapphoz tartozik.
+A projekt gyökerében lévő két scriptet használja:
+
+  backup-munkalap-app.ps1
+  restore-munkalap-app.ps1
+
+0.19.1-TOL AUTOMATIZALT IZOLALT ACCEPTANCE TESZT IS VAN
+------------------------------------------------------
+
+A projekt gyokereben talalhato:
+
+  acceptance-backup-restore.ps1
+
+A script ideiglenes projektmasolatot, egyedi `munkalap-acceptance-*` Compose
+projektnevet, kulon portokat es kulon volume-okat hasznal. Nem az eles
+postgres_data/app_runtime/backup_repository/backup_control volume-okon dolgozik.
+Vegigteszteli a MASTER, inkrementalis, webes restore, automatikus rollback es a
+host PowerShell disaster-recovery folyamatot. Sikeres futas utan a tesztvolume-
+okat torli; hiba eseten a diagnosztikai kornyezetet meghagyja.
+
+Futtatas a projekt gyokerebol:
+
+  .\acceptance-backup-restore.ps1
+
+0.19.0-TOL AZ INTEGRALT WEBES RESTORE IS ELES FUNKCIO
+--------------------------------------------------------
+
+Ket helyreallitasi szint marad:
+
+1. Admin -> Biztonsagi mentesek:
+   - napi MASTER / inkrementalis mentest a backup-agent kezeli;
+   - PostgreSQL-hez pgBackRest, az app_runtime tartalomhoz teljes/delta lanc keszul;
+   - azonos deployment fingerprinten belul a mentési pont webrol visszaallithato;
+   - restore jogosultsag: admin.backup.restore.
+2. A jelen dokumentumban leirt PowerShell scriptek:
+   - teljes host/Docker disaster-recovery mentes es visszaallitas;
+   - mas alkalmazasverzio, Docker image vagy Compose-konfiguracio visszaallitasahoz ezt kell hasznalni.
+
+INTEGRALT WEBES RESTORE BIZTONSAGI FOLYAMATA
+-------------------------------------------
+
+Az Admin -> Biztonsagi mentesek oldalon a visszaallitas csak sikeres, teljes
+lancellenorzessel rendelkezo es az aktualis deployment fingerprintjevel azonos
+mentesi pontra indithato. A folytatashoz pontosan ezt kell begépelni:
+
+  VISSZAALLIT
+
+A backup-agent ezutan:
+
+1. ellenorzi a teljes MASTER + inkrementalis lancot es a SHA-256 manifesteket;
+2. kotelezo pre-restore MASTER-t keszit az aktualis allapotrol;
+3. staging teruleten rekonstrualja a cel app_runtime allapotot;
+4. a PostgreSQL-t a kivalasztott pgBackRest backup sajat stop LSN pontjara allitja;
+5. elinditja es ellenorzi az adatbazist;
+6. kotelezo post-restore MASTER-t keszit az uj PostgreSQL timeline-on;
+7. elinditja a backendet, ellenorzi az Alembic head/current allapotot es az audit hash-chain integritasat;
+8. visszainditja a frontendet.
+
+Ha a destruktiv lepesek utan hiba tortenik, a backup-agent megprobal automatikusan
+visszagorgetni a pre-restore MASTER adatbazis- es runtime-allapotara. Sikeres
+rollback utan kulon rollback MASTER keszul, hogy a kovetkezo inkrementalis lanc
+mar a tenylegesen visszaallitott PostgreSQL timeline-rol induljon. Ha ez nem
+bizonyithatoan sikeres, tartos recovery lock marad aktiv. Ilyenkor uj integralt
+backup vagy restore nem indithato.
+
+A recovery lock csak a rendszer kezi ellenorzese/helyreallitasa utan oldhato fel
+az Admin feluleten, pontosan ezzel a megerositessel:
+
+  HELYREALLITAS_KESZ
+
+A feloldas elott az agent ujra ellenorzi a PostgreSQL-t, a backendet, az Alembic
+head/current allapotot es a pgBackRest repositoryt.
+
+Az integralt backup-agent Docker volume-jai:
+
+  backup_repository
+  backup_control
+
+FONTOS: a jelenlegi PowerShell host-backup formatum ezeket a backup-agent
+volume-okat nem archivlja kulon. A host MASTER ettol fuggetlenul tartalmazza a
+PostgreSQL custom dumpot, az app_runtime tartalmat, az image-eket es a telepitesi
+konfiguraciot, ezert teljes host-szintu disaster recoveryre hasznalhato. A
+backup-agent korabbi jobtortenete es pgBackRest repositoryja host restore utan
+nem tekintendo helyreallitott allapotnak; az uj deploymentben uj MASTER-rel kell
+uj integralt lancot nyitni.
+
+PARHUZAMOS HELYREALLITAS TILOS
+-----------------------------
+
+A PowerShell host MASTER nem indul el, ha az integralt agentben backup/restore
+feladat fut vagy recovery lock aktiv. A host restore is ellenorzi ezt az allapotot.
+Recovery lock melletti host disaster recovery csak tudatosan, a
+-ResumeInterruptedRestore kapcsoloval folytathato. Mivel a host safety backup
+ilyen bizonytalan allapotban szandekosan letiltott lehet, szukseg eseten a
+-SkipSafetyBackup kapcsolot is kifejezetten meg kell adni. Ezt csak akkor hasznald,
+ha a webes rollback nem sikerult es a host restore az egyetlen helyreallitasi ut.
+
+A parancsokat Windows PowerShellből, a projekt gyökérkönyvtárából kell futtatni.
+Alapértelmezett projektkönyvtár:
+
+  C:\Munkalap
+
+A teljes mentés tartalma
+------------------------
+
+A mentőscript elkészíti:
+
+1. a PostgreSQL-adatbázis custom formátumú dumpját;
+2. az app_runtime Docker-volume tartalmának TAR.GZ mentését;
+3. a PostgreSQL-, backend-, backup-agent- és frontend-image-ek mentését;
+4. a docker-compose.yml, .env, VERSION és CHANGELOG.md másolatát;
+5. az effektív Compose-konfigurációt;
+6. manifest.json fájlt;
+7. minden mentett fájl SHA-256 ellenőrzőösszegét.
+
+A mentés idejére a backend, a frontend és a backup-agent leáll, hogy ne történhessen adatbevitel,
+archív fájlfeltöltés vagy párhuzamos automatikus mentés. A PostgreSQL-konténer futva marad, hogy a pg_dump
+konzisztens adatbázismentést készíthessen. A script a mentés végén újraindítja
+a korábban futó szolgáltatásokat.
+
+FONTOS SZABÁLYOK
+----------------
+
+- Soha ne használd a "docker compose down -v" parancsot. A -v kapcsoló törli
+  a PostgreSQL-, app_runtime-, backup_repository- és backup_control-volume-okat.
+- A mentési könyvtár .env fájlt is tartalmazhat, ezért bizalmas adatként kezeld.
+- A mentést másik fizikai meghajtóra, NAS-ra vagy másik gépre is másold át.
+- A mentés csak akkor tekinthető ellenőrzöttnek, ha a visszaállítást külön
+  tesztgépen vagy külön Docker-környezetben sikeresen kipróbáltad.
+- A visszaállítás a mentésben szereplő alkalmazásverziót állítja vissza.
+  Az újabb verzióra frissítést csak a visszaállított rendszer ellenőrzése után
+  végezd el.
+
+======================================================================
+1. TELJES BIZTONSÁGI MENTÉS
+======================================================================
+
+1.1. Alapértelmezett mentés
+---------------------------
+
+Nyisd meg a PowerShellt, majd futtasd:
+
+  Set-Location C:\Munkalap
+  Set-ExecutionPolicy -Scope Process Bypass
+  .\backup-munkalap-app.ps1
+
+A mentés alapértelmezett helye:
+
+  C:\Munkalap\backups\backup-ÉÉÉÉHHNN-ÓÓPPMM
+
+Példa:
+
+  C:\Munkalap\backups\backup-20260803-202032
+
+1.2. Mentés másik meghajtóra vagy NAS-ra
+----------------------------------------
+
+  Set-Location C:\Munkalap
+  Set-ExecutionPolicy -Scope Process Bypass
+  .\backup-munkalap-app.ps1 -OutputRoot "D:\MunkalapBackups"
+
+Hálózati útvonal példája:
+
+  .\backup-munkalap-app.ps1 -OutputRoot "\\NAS\BiztonsagiMentes\Munkalap"
+
+A futtató Windows-felhasználónak írási jogosultsággal kell rendelkeznie a
+célkönyvtárhoz.
+
+1.3. Opcionális konténerfájlrendszer-export
+-------------------------------------------
+
+Normál mentéshez nem szükséges. Diagnosztikai célra:
+
+  .\backup-munkalap-app.ps1 -IncludeContainerExports
+
+A konténerexportok nem tartalmazzák a Docker-volume-ok adatait, ezért nem
+helyettesítik sem a PostgreSQL dumpot, sem az app_runtime mentését.
+
+1.4. A sikeres mentés ellenőrzése
+---------------------------------
+
+A mentési könyvtárban legalább ezeknek a nem üres fájloknak kell szerepelniük:
+
+  database-ÉÉÉÉHHNN-ÓÓPPMM.dump
+  app-runtime-ÉÉÉÉHHNN-ÓÓPPMM.tar.gz
+  docker-images-ÉÉÉÉHHNN-ÓÓPPMM.tar
+  docker-compose.yml
+  compose-effective.yml
+  .env
+  VERSION
+  manifest.json
+  checksums.sha256
+
+Fájlok listázása:
+
+  Get-ChildItem ".\backups\backup-20260803-202032" |
+      Select-Object Name, Length, LastWriteTime
+
+A fő fájlok egyikének mérete sem lehet nulla.
+
+A mentési script saját maga is ellenőrzi:
+
+- a pg_dump sikerességét;
+- a dump olvashatóságát pg_restore --list paranccsal;
+- a runtime TAR létrejöttét;
+- az image-mentést;
+- az SHA-256 ellenőrzőösszegek létrejöttét.
+
+======================================================================
+2. VISSZAÁLLÍTÁS ELŐTTI ELLENŐRZÉS
+======================================================================
+
+A ValidateOnly mód nem módosít semmit. Mindig ezzel kezdj:
+
+  Set-Location C:\Munkalap
+  Set-ExecutionPolicy -Scope Process Bypass
+
+  .\restore-munkalap-app.ps1 `
+      -BackupDir ".\backups\backup-20260803-202032" `
+      -ValidateOnly
+
+Elvárt üzenetek:
+
+  SHA-256 ellenorzes sikeres
+  A mentes ervenyes
+
+Ha az ellenőrzés hibát jelez, ne indítsd el a visszaállítást.
+
+======================================================================
+3. TELJES VISSZAÁLLÍTÁS MŰKÖDŐ RENDSZERRE
+======================================================================
+
+Parancs:
+
+  Set-Location C:\Munkalap
+  Set-ExecutionPolicy -Scope Process Bypass
+
+  .\restore-munkalap-app.ps1 `
+      -BackupDir ".\backups\backup-20260803-202032"
+
+A script megerősítést kér. Pontosan ezt kell beírni:
+
+  VISSZAALLIT
+
+Normál esetben a script a visszaállítás előtt automatikusan vészmentést készít
+a jelenlegi rendszerről ide:
+
+  C:\Munkalap\pre-restore-backups\backup-ÉÉÉÉHHNN-ÓÓPPMM
+
+Ezután:
+
+1. leállítja a jelenlegi Compose-szolgáltatásokat volume-törlés nélkül;
+2. visszatölti a mentett image-eket;
+3. visszaállítja a telepítési konfigurációt;
+4. elindítja a PostgreSQL-szolgáltatást;
+5. ellenőrzi a dumpot és a runtime TAR-t;
+6. visszaállítja az adatbázist;
+7. visszaállítja az app_runtime volume-ot;
+8. elindítja a backendet és a frontendet;
+9. ellenőrzi az Alembic-verziót és a fő rekordszámokat.
+
+======================================================================
+4. VISSZAÁLLÍTÁS ÜRES TESZTGÉPRE
+======================================================================
+
+Teljesen új vagy biztosan üres tesztgépen a vészmentés kihagyható:
+
+  Set-Location C:\Munkalap
+  Set-ExecutionPolicy -Scope Process Bypass
+
+  .\restore-munkalap-app.ps1 `
+      -BackupDir ".\backups\backup-20260803-202032" `
+      -SkipSafetyBackup
+
+A -SkipSafetyBackup kapcsolót élő rendszeren ne használd.
+
+A célgépen legalább ezek szükségesek:
+
+- Docker Desktop vagy Docker Engine;
+- Docker Compose v2;
+- a mentési könyvtár;
+- a restore-munkalap-app.ps1 script;
+- írási jogosultság a projektkönyvtárhoz.
+
+======================================================================
+5. MEGSZAKADT VISSZAÁLLÍTÁS FOLYTATÁSA
+======================================================================
+
+Ha a visszaállítás közben a script hibával leállt, és csak részleges Compose-
+telepítés maradt (például csak a db szolgáltatás fut), a folytatás parancsa:
+
+  .\restore-munkalap-app.ps1 `
+      -BackupDir ".\backups\backup-20260803-202032" `
+      -ResumeInterruptedRestore
+
+Üres tesztgépen, ahol nincs megőrzendő céladat:
+
+  .\restore-munkalap-app.ps1 `
+      -BackupDir ".\backups\backup-20260803-202032" `
+      -ResumeInterruptedRestore `
+      -SkipSafetyBackup
+
+A ResumeInterruptedRestore kapcsolót csak akkor használd, ha meggyőződtél
+arról, hogy valóban egy korábbi félbemaradt visszaállítás részleges
+konténerei láthatók.
+
+======================================================================
+6. VISSZAÁLLÍTÁS UTÁNI ELLENŐRZÉS
+======================================================================
+
+6.1. Konténerek állapota
+------------------------
+
+  docker compose ps
+
+Elvárt szolgáltatások:
+
+  db        fut, lehetőleg healthy
+  backup-agent fut
+  backend   fut
+  frontend  fut
+
+6.2. Backend napló
+------------------
+
+  docker compose logs --tail=200 backend
+
+Ne legyen benne folyamatos újraindulás, Python traceback vagy adatbázis-
+kapcsolati hiba. Az Alembic INFO sorok normálisak.
+
+6.3. Alembic-verzió
+-------------------
+
+  docker compose exec -T backend sh -lc `
+      'alembic current 2>&1; printf "\nEXIT_CODE=%s\n" "$?"'
+
+Az EXIT_CODE értéke 0 legyen.
+
+6.4. Fő rekordszámok
+--------------------
+
+  docker compose exec -T db sh -lc `
+      'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT (SELECT COUNT(*) FROM users), (SELECT COUNT(*) FROM customers), (SELECT COUNT(*) FROM assets), (SELECT COUNT(*) FROM work_orders), (SELECT COUNT(*) FROM work_order_archives);"'
+
+Az eredmény formátuma:
+
+  felhasználók|ügyfelek|eszközök|munkalapok|archívumok
+
+6.5. Funkcionális ellenőrzés
+----------------------------
+
+A böngészőben hajts végre teljes újratöltést:
+
+  Ctrl + F5
+
+Ellenőrizd:
+
+- bejelentkezés;
+- ügyfelek és helyszínek;
+- eszközök és számlálóállások;
+- munkalapok;
+- archivált fájlok előnézete és letöltése;
+- felhasználók és jogosultságok;
+- nyomtatási beállítások.
+
+======================================================================
+7. GYAKORI HIBÁK
+======================================================================
+
+"No resource found to remove"
+-----------------------------
+Üres célgépen vagy félbemaradt telepítésnél előfordulhat. Önmagában nem adat-
+vesztési hiba. Ellenőrizd a docker compose ps -a kimenetét.
+
+"unknown flag: --no-build"
+---------------------------
+Régi visszaállító scriptet használsz. A projektben lévő
+restore-munkalap-app.ps1 már nem használja ezt a kapcsolót.
+
+Alembic INFO sor után PowerShell-hiba
+------------------------------------
+Régi visszaállító script a standard hibakimenetre írt normál INFO sort hibának
+értelmezte. A projektben lévő script a tényleges folyamatkilépési kódot
+ellenőrzi.
+
+Részleges telepítés található
+-----------------------------
+Egy korábbi visszaállítás félbeszakadhatott. Ellenőrzés után használd a
+-ResumeInterruptedRestore kapcsolót.
+
+A visszaállított rendszer régebbi verziót mutat
+-----------------------------------------------
+Ez normális: a visszaállítás a mentésben szereplő verziót állítja vissza.
+Először ellenőrizd az adatokat, majd külön, dokumentált frissítési eljárással
+telepítsd az újabb verziót.
+
+======================================================================
+8. TILTOTT VAGY KOCKÁZATOS PARANCSOK
+======================================================================
+
+Ne használd:
+
+  docker compose down -v
+
+Ez törli a tartós volume-okat.
+
+Ne tekintsd teljes mentésnek önmagában:
+
+  docker image save
+  docker container export
+
+Az image- és konténermentés nem tartalmazza a PostgreSQL- és app_runtime-
+volume-ok tartalmát.
+
+Ne állíts vissza ellenőrzés nélkül közvetlenül éles rendszerre. Előbb mindig
+futtasd a -ValidateOnly módot, és rendszeresen végezz próbavisszaállítást külön
+tesztgépen.

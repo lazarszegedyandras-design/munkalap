@@ -1,0 +1,30 @@
+def env = System.getenv()
+def versionNameValue = env['MUNKALAP_VERSION_NAME'] ?: '0.31.0'
+def versionCodeValue = (env['MUNKALAP_VERSION_CODE'] ?: '31000') as Integer
+
+android {
+    defaultConfig {
+        versionName versionNameValue
+        versionCode versionCodeValue
+    }
+
+    def ksPath = env['MUNKALAP_KEYSTORE_PATH']
+    def ksPassword = env['MUNKALAP_KEYSTORE_PASSWORD']
+    def keyAliasValue = env['MUNKALAP_KEY_ALIAS']
+    def keyPasswordValue = env['MUNKALAP_KEY_PASSWORD']
+    if (ksPath && ksPassword && keyAliasValue && keyPasswordValue) {
+        signingConfigs {
+            munkalapRelease {
+                storeFile file(ksPath)
+                storePassword ksPassword
+                keyAlias keyAliasValue
+                keyPassword keyPasswordValue
+            }
+        }
+        buildTypes {
+            release {
+                signingConfig signingConfigs.munkalapRelease
+            }
+        }
+    }
+}

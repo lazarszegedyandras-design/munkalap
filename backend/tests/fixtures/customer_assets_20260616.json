@@ -1,0 +1,15 @@
+[
+  {
+    "company_code": "DRh",
+    "customer_name": "Minta Ügyfél Kft.",
+    "customer_address": "1111 Mintaváros, Példa utca 4.",
+    "location_name": "Minta iroda",
+    "location_address": "1111 Mintaváros, Példa utca 5.",
+    "contact_person": "Minta Kapcsolattartó",
+    "phone": "+36 1 000 0003",
+    "email": "ugyfel@example.com",
+    "machine_type": "Minta nyomtató",
+    "serial_number": "TEST-SERIAL-001",
+    "source_row": 2
+  }
+]

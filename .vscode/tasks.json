@@ -1,0 +1,43 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Admin jelszó helyreállítása",
+      "type": "shell",
+      "command": "docker compose exec backend python -m app.reset_password --email admin@example.com --activate",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "focus": true,
+        "panel": "dedicated",
+        "clear": true
+      }
+    },
+    {
+      "label": "Felhasználói jelszó visszaállítása",
+      "type": "shell",
+      "command": "docker compose exec backend python -m app.reset_password --email \"${input:resetUserEmail}\"",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "focus": true,
+        "panel": "dedicated",
+        "clear": true
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "resetUserEmail",
+      "type": "promptString",
+      "description": "A felhasználó email címe",
+      "default": "admin@example.com"
+    }
+  ]
+}

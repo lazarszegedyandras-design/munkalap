@@ -1,0 +1,23 @@
+{
+  "name": "munkalap-eszkoz-frontend",
+  "version": "0.31.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 3000",
+    "test:datetime": "node --test tests/datetime.test.js",
+    "test:work-orders": "node --test tests/workOrders.test.js",
+    "test:modules": "node --test tests/modules.test.js"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.28.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^5.4.11"
+  }
+}

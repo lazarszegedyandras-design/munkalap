@@ -1,0 +1,38 @@
+import React,{useEffect,useMemo,useState}from'react'
+import{api,downloadFile}from'../api.js'
+import DataTable from'../components/DataTable.jsx'
+import{Field}from'../components/FormField.jsx'
+
+const currentYear=new Date().getFullYear(),daysHu=['H','K','Sze','Cs','P','Szo','V']
+const key=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+const parse=s=>new Date(`${s}T00:00:00`)
+const addDays=(d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x}
+const monday=d=>{const x=new Date(d);x.setHours(0,0,0,0);const wd=(x.getDay()+6)%7;return addDays(x,-wd)}
+const monthStart=d=>new Date(d.getFullYear(),d.getMonth(),1)
+const monthEnd=d=>new Date(d.getFullYear(),d.getMonth()+1,0)
+const yearStart=d=>new Date(d.getFullYear(),0,1)
+const yearEnd=d=>new Date(d.getFullYear(),11,31)
+const fmt=d=>new Intl.DateTimeFormat('hu-HU',{year:'numeric',month:'long',day:'numeric'}).format(d)
+const employeeStyle=id=>{const hue=(Number(id||0)*47)%360;return{border:`hsl(${hue} 55% 42%)`,background:`hsl(${hue} 75% 92%)`,text:`hsl(${hue} 55% 24%)`}}
+const occurs=(e,d)=>parse(e.start_date)<=d&&parse(e.end_date)>=d
+function label(e){return `${e.full_name} · ${e.leave_type==='sick_leave'?'Betegszab.':'Szabadság'}${e.status==='pending'?' · függőben':''}`}
+
+export default function HrSummary(){
+ const[year,setYear]=useState(currentYear),[rows,setRows]=useState([]),[error,setError]=useState(''),[view,setView]=useState('month'),[anchor,setAnchor]=useState(new Date()),[calendar,setCalendar]=useState([]),[loading,setLoading]=useState(false)
+ useEffect(()=>{api(`/hr/summary?year=${year}`).then(setRows).catch(e=>setError(e.message))},[year])
+ const range=useMemo(()=>{if(view==='week'){const s=monday(anchor);return[s,addDays(s,6)]}if(view==='year'){return[yearStart(anchor),yearEnd(anchor)]}return[monthStart(anchor),monthEnd(anchor)]},[view,anchor])
+ useEffect(()=>{setLoading(true);api(`/hr/summary/calendar?date_from=${key(range[0])}&date_to=${key(range[1])}`).then(d=>{setCalendar(d.events||[]);setError('')}).catch(e=>setError(e.message)).finally(()=>setLoading(false))},[range[0].getTime(),range[1].getTime()])
+ const employees=useMemo(()=>Array.from(new Map(calendar.map(e=>[e.employee_id,{id:e.employee_id,name:e.full_name}])).values()),[calendar])
+ function move(n){if(view==='week')setAnchor(addDays(anchor,n*7));else if(view==='month')setAnchor(new Date(anchor.getFullYear(),anchor.getMonth()+n,1));else setAnchor(new Date(anchor.getFullYear()+n,0,1))}
+ function today(){setAnchor(new Date());setYear(currentYear)}
+ return <section><div className="page-head"><div><h1>HR összesítés</h1><p className="muted">Az összesítő és a távolléti naptár külön <code>hr.summary.view</code> jogosultsághoz kötött.</p></div><div className="inline-actions"><Field label="Év"><select value={year} onChange={e=>setYear(Number(e.target.value))}>{[currentYear-1,currentYear,currentYear+1].map(y=><option key={y}>{y}</option>)}</select></Field><button className="secondary" onClick={()=>downloadFile(`/reports/hr.csv?year=${year}`)}>CSV export</button></div></div>{error&&<div className="error">{error}</div>}
+ <DataTable rows={rows} columns={[{key:'full_name',label:'Munkavállaló'},{key:'employee_number',label:'Törzsszám',render:r=>r.employee_number||''},{key:'company_code',label:'Cég',render:r=>r.company_code||''},{key:'job_title',label:'Beosztás',render:r=>r.job_title||''},{key:'organizational_unit',label:'Szervezeti egység',render:r=>r.organizational_unit||''},{key:'total_days',label:'Éves keret'},{key:'approved_days',label:'Kiadott'},{key:'pending_days',label:'Függőben'},{key:'remaining_days',label:'Maradék'},{key:'sick_leave_used_days',label:'Betegszab. kiadott'},{key:'sick_leave_remaining_days',label:'Betegszab. maradék'}]}/>
+ <div className="panel hr-summary-calendar"><div className="calendar-toolbar"><div><h2>HR távolléti naptár</h2><p className="muted">{view==='week'?`${fmt(range[0])} – ${fmt(range[1])}`:view==='month'?new Intl.DateTimeFormat('hu-HU',{year:'numeric',month:'long'}).format(anchor):String(anchor.getFullYear())}</p></div><div className="inline-actions"><div className="segmented"><button className={view==='week'?'active secondary':'secondary'} onClick={()=>setView('week')}>Heti</button><button className={view==='month'?'active secondary':'secondary'} onClick={()=>setView('month')}>Havi</button><button className={view==='year'?'active secondary':'secondary'} onClick={()=>setView('year')}>Éves</button></div><button className="secondary" onClick={()=>move(-1)}>Előző</button><button className="secondary" onClick={today}>Ma</button><button className="secondary" onClick={()=>move(1)}>Következő</button></div></div>
+ <div className="calendar-legends"><div className="technician-legend">{employees.map(emp=>{const c=employeeStyle(emp.id);return <span className="legend-item" key={emp.id}><i style={{background:c.background,borderColor:c.border}}/>{emp.name}</span>})}</div><div className="status-legend"><span><i className="status-sample open"/> Jóváhagyott</span><span><i className="status-sample pending"/> Függőben</span></div></div>
+ {loading?<p>Naptár betöltése...</p>:view==='week'?<Week range={range} events={calendar}/>:view==='month'?<Month anchor={anchor} events={calendar}/>:<Year anchor={anchor} events={calendar}/>}</div>
+ </section>}
+
+function Event({event,compact=false}){const c=employeeStyle(event.employee_id);return <div className={`hr-calendar-event ${event.status} ${event.leave_type}`} title={`${label(event)}\n${event.start_date} – ${event.end_date} · ${event.days} nap`} style={{'--event-border':c.border,'--event-background':c.background,'--event-text':c.text}}><strong>{compact?event.full_name.split(' ').map(x=>x[0]).join(''):event.full_name}</strong>{!compact&&<span>{event.leave_type==='sick_leave'?'Betegszabadság':'Szabadság'}{event.status==='pending'?' · függőben':''}</span>}</div>}
+function Week({range,events}){const days=Array.from({length:7},(_,i)=>addDays(range[0],i));return <div className="hr-week-calendar">{days.map((d,i)=><div className={`hr-day-card ${i>4?'weekend':''}`} key={key(d)}><header><strong>{daysHu[i]}</strong><span>{d.toLocaleDateString('hu-HU')}</span></header><div className="hr-day-events">{events.filter(e=>occurs(e,d)).map(e=><Event key={`${e.id}-${key(d)}`} event={e}/>)}</div></div>)}</div>}
+function Month({anchor,events,compact=false}){const first=monthStart(anchor),offset=(first.getDay()+6)%7,start=addDays(first,-offset),cells=Array.from({length:42},(_,i)=>addDays(start,i));return <div className={compact?'hr-mini-month-grid':'hr-month-grid'}>{!compact&&daysHu.map(d=><div className="hr-month-head" key={d}>{d}</div>)}{cells.map(d=>{const inMonth=d.getMonth()===anchor.getMonth(),dayEvents=events.filter(e=>occurs(e,d));return <div className={`hr-month-day ${inMonth?'':'outside'} ${[0,6].includes(d.getDay())?'weekend':''}`} key={key(d)}><span className="day-number">{d.getDate()}</span>{compact?<div className="mini-dots">{dayEvents.slice(0,4).map(e=><i key={e.id} style={{background:employeeStyle(e.employee_id).border}} title={label(e)}/>)}</div>:<div className="hr-day-events">{dayEvents.slice(0,5).map(e=><Event compact key={`${e.id}-${key(d)}`} event={e}/>)}{dayEvents.length>5&&<small>+{dayEvents.length-5} további</small>}</div>}</div>})}</div>}
+function Year({anchor,events}){return <div className="hr-year-grid">{Array.from({length:12},(_,m)=>{const d=new Date(anchor.getFullYear(),m,1);return <div className="hr-year-month" key={m}><h3>{new Intl.DateTimeFormat('hu-HU',{month:'long'}).format(d)}</h3><div className="mini-weekdays">{daysHu.map(x=><span key={x}>{x}</span>)}</div><Month anchor={d} events={events} compact/></div>})}</div>}

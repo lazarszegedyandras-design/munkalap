@@ -1,0 +1,2 @@
+# Intentionally empty. This file neutralizes stale local compose.override.yaml files during in-place upgrades.
+services: {}
