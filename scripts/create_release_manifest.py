@@ -10,10 +10,17 @@ from release_support import MANIFEST_NAME, safe_source_path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ROOT_FILES = {"VERSION", "CHANGELOG.md", "mobile/package.json"}
+ROOT_FILES = {
+    "VERSION", "CHANGELOG.md", "mobile/package.json", ".gitignore", ".dockerignore",
+    ".env.example", ".env.production.example", "docker-compose.yml",
+    "docker-compose.dev.yml", "docker-compose.production.yml", "compose.yaml",
+    "compose.override.yaml", "acceptance-backup-restore.ps1",
+    "backup-munkalap-app.ps1", "restore-munkalap-app.ps1",
+    "start-v0.30.0-hotfix.ps1",
+}
 SOURCE_PREFIXES = (
     "backend/", "backup_agent/", "backup_runner/", "database/",
-    "deploy/testing/", "frontend/", "mobile/src/", "mobile/tests/",
+    "deploy/", "frontend/", "mobile/",
     "scripts/", "tests/release/",
 )
 
