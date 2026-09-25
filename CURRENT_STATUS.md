@@ -19,6 +19,7 @@ Utolsó felmérés: 2026-09-25. Ez dokumentációs pillanatkép, nem tesztelt ki
 
 ## Ellenőrzések
 
+- A `chore/docker-ci` ágon elkészült a követett forrásból manifestet készítő generátor és a teljes elkülönített Docker release suite GitHub-jobja. A GitHub-futás és a kötelező státuszellenőrzés beállítása még hátravan.
 - A `chore/ci-checks` ágon elkészült a GitHub Actions backend- és frontend-ellenőrzés. A workflow YAML szerkezetét ellenőriztük; 33 helyi frontend teszt sikeres. A GitHubon a `Backend tests` és a `Frontend tests and build` job egyaránt sikeres lett, és mindkettő kötelező ellenőrzés a `main` ágon.
 - A Git által felvehető 353 fájlból készült tiszta másolatban 128 backend teszt sikeres; egy mobilfotós teszt Windowsos fájltörlési hibája miatt nem futott ebben a körben. A másolat elkészülte óta egy döntési dokumentum és egy Git-szabályfájl került a jelöltek közé; az új hiányzóforrás API-teszt külön sikeres.
 - A kapcsolódó backend céltesztek: 10 sikeres. Frontend munkalaptesztek: 10 sikeres. Release-harness egységtesztek: 31 sikeres, 8 kihagyott.
@@ -27,6 +28,6 @@ Utolsó felmérés: 2026-09-25. Ez dokumentációs pillanatkép, nem tesztelt ki
 
 ## Következő lépések
 
-1. Minden új pull requesten ellenőrizd a kötelező CI-jobok eredményét. A teljes Docker-alapú release acceptance továbbra is külön kapu.
+1. Futtasd a `Docker release suite` jobot pull requesten; csak sikeres teljes futás után tedd kötelezővé a `main` ágon. Az elkülönített teszt nem production-jóváhagyás.
 2. Production build vagy frissítés előtt a három jóváhagyott privát adatfájlt biztonságosan a `RUNTIME_DIR` volume-ba kell telepíteni; éles adatot ne tegyél a forrásba vagy a konténerképbe.
 3. Új release manifest és teljes, izolált `test-release.ps1 -Suite all` acceptance szükséges, amint a Docker daemon rendelkezésre áll. A Windowsos mobilfotó-teszt eltérését Linux/konténeres környezetben kell megerősíteni.
