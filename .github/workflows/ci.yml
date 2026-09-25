@@ -50,3 +50,25 @@ jobs:
           npm run test:modules
       - name: Build frontend
         run: npm run build
+
+  docker-release:
+    name: Docker release suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Create tracked-source manifest
+        run: python scripts/create_release_manifest.py
+      - name: Run isolated Docker release suite
+        run: sh ./test-release.sh --suite all
+      - name: Keep failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-release-failure
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 3
